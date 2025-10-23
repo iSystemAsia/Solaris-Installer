@@ -124,6 +124,8 @@ $$\   $$ |$$ |  $$ |$$ |$$  __$$ |$$ |      $$ | \____$$\
             ));
         }
 
+        $this->verifyToken($input->getArgument('token'));
+
         if(! $input->getOption('package')) {
             $packageOptions  = $this->packageOptions();
             $defaultDatabase = collect($packageOptions)->keys()->first();
@@ -361,6 +363,25 @@ $$\   $$ |$$ |  $$ |$$ |$$  __$$ |$$ |      $$ | \____$$\
     {
         if ((is_dir($directory) || is_file($directory)) && $directory != getcwd()) {
             throw new RuntimeException('Application already exists!');
+        }
+    }
+
+    protected function verifyToken(string $token)
+    {
+        $ch = curl_init('https://api.github.com/user');
+        curl_setopt_array($ch, [
+            CURLOPT_HTTPHEADER => [
+                "Authorization: Bearer {$token}",
+                "User-Agent: solaris-installer"
+            ],
+            CURLOPT_RETURNTRANSFER => true,
+        ]);
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if (!$httpCode === 200) {
+            throw new RuntimeException('Token is invalid!');
         }
     }
 
