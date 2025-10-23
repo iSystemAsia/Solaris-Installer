@@ -77,8 +77,6 @@ class NewCommand extends Command
             ->addOption('db_name', null, InputOption::VALUE_REQUIRED, 'Database name')
             ->addOption('db_username', null, InputOption::VALUE_REQUIRED, 'Database username')
             ->addOption('db_password', null, InputOption::VALUE_NONE, 'Database password')
-            ->addOption('redis_db', null, InputOption::VALUE_NONE, 'Redis DB index')
-            ->addOption('redis_cache_db', null, InputOption::VALUE_NONE, 'Redis Cache DB index')
             ->addOption('migrate', null, InputOption::VALUE_NONE, 'Doing migrate after install finish')
             ->addOption('seeder', null, InputOption::VALUE_NONE, 'Doing seeder after install finish')
             ->addOption('npm', null, InputOption::VALUE_NONE, 'Doing npm install after setup package.json finish');
@@ -206,14 +204,6 @@ $$\   $$ |$$ |  $$ |$$ |$$  __$$ |$$ |      $$ | \____$$\
             $input->setOption('db_password', password("Database password"));
         }
 
-        if(! $input->getOption('redis_db')) {
-            $input->setOption('redis_db', text("Redis DB index", default: "0"));
-        }
-
-        if(! $input->getOption('redis_cache_db')) {
-            $input->setOption('redis_cache_db', text("Redis Cache DB index", default: "1"));
-        }
-
         if(! $input->getOption('npm')) {
             $input->setOption('npm', confirm("Would you like to run the npm install after package.json updated"));
         }
@@ -285,7 +275,7 @@ $$\   $$ |$$ |  $$ |$$ |$$  __$$ |$$ |      $$ | \____$$\
 
             $this->runCommands($commands, $input, $output, workingPath: $directory);
 
-            $solarisCommand = $phpBinary." \"$directory/artisan\" solaris:install";
+            $solarisCommand = $phpBinary." artisan solaris:install";
             foreach ($config as $key => $value) {
                 if($value) {
                     $solarisCommand .= " --".$key;
@@ -308,6 +298,30 @@ $$\   $$ |$$ |  $$ |$$ |$$  __$$ |$$ |      $$ | \____$$\
             );
 
             $this->replaceInFile(
+                'SESSION_DRIVER=database',
+                'SESSION_DRIVER=redis',
+                $directory.'/.env'
+            );
+
+            $this->replaceInFile(
+                'QUEUE_CONNECTION=database',
+                'QUEUE_CONNECTION=redis',
+                $directory.'/.env'
+            );
+
+            $this->replaceInFile(
+                'CACHE_STORE=database',
+                'CACHE_STORE=redis',
+                $directory.'/.env'
+            );
+
+            $this->replaceInFile(
+                'REDIS_CLIENT=phpredis',
+                'REDIS_CLIENT=predis',
+                $directory.'/.env'
+            );
+
+            $this->replaceInFile(
                 'APP_URL=http://localhost',
                 'APP_URL=http://localhost:8000',
                 $directory.'/.env'
@@ -325,8 +339,8 @@ $$\   $$ |$$ |  $$ |$$ |$$  __$$ |$$ |      $$ | \____$$\
             $this->runCommands([$solarisCommand], $input, $output, workingPath: $directory);
 
             $commands = [
-                $phpBinary." \"$directory/artisan\" reverb:install -q -n",
-                $phpBinary." \"$directory/artisan\" install:broadcasting --without-node --force --reverb",
+                $phpBinary." artisan reverb:install -q -n",
+                $phpBinary." artisan install:broadcasting --without-node --force --reverb",
             ];
             $this->runCommands($commands, $input, $output, workingPath: $directory);
 
