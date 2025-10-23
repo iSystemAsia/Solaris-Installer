@@ -380,7 +380,7 @@ $$\   $$ |$$ |  $$ |$$ |$$  __$$ |$$ |      $$ | \____$$\
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
 
-        if (!$httpCode === 200) {
+        if ($httpCode != 200) {
             throw new RuntimeException('Token is invalid!');
         }
     }
