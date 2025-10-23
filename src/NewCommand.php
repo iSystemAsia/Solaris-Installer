@@ -199,7 +199,7 @@ $$\   $$ |$$ |  $$ |$$ |$$  __$$ |$$ |      $$ | \____$$\
         }
 
         if(! $input->getOption('db_username')) {
-            $input->setOption('db_username', text("Database username", default: "root"));
+            $input->setOption('db_username', text("Database username", default: $input->getOption('database') == "pgsql" ? "postgres" : "root"));
         }
 
         if(! $input->getOption('db_password')) {
@@ -239,7 +239,7 @@ $$\   $$ |$$ |  $$ |$$ |$$  __$$ |$$ |      $$ | \____$$\
         
         if($input->getOption("laravel")) {
             $solarisConfig = [
-                'npm-install'   => $input->getOption("npm"),
+                'npm-install'   => false,
                 'migrate'       => $input->getOption("migrate"),
                 'seeder'        => $input->getOption("seeder")
             ];
@@ -281,17 +281,31 @@ $$\   $$ |$$ |  $$ |$$ |$$  __$$ |$$ |      $$ | \____$$\
                 $commands[] = $composer." config repositories.{$pack} vcs https://github.com/{$pack}.git";
             }
 
-            $commands[] = $composer." require ".$solarisPackages[count($solarisPackages)-1]." --with-all-dependencies --no-cache";
+            $commands[] = $composer." require ".$solarisPackages[count($solarisPackages)-1]." --with-all-dependencies";
 
             $this->runCommands($commands, $input, $output, workingPath: $directory);
 
             $solarisCommand = $phpBinary." \"$directory/artisan\" solaris:install";
             foreach ($config as $key => $value) {
-                $solarisCommand .= " --".$key;
-                if(is_string($value)) {
-                    $solarisCommand .= '="{$value}"';
+                if($value) {
+                    $solarisCommand .= " --".$key;
+                    if(is_string($value)) {
+                        $solarisCommand .= '="{$value}"';
+                    }
                 }
             }
+
+            $this->pregReplaceInFile(
+                '/(use Illuminate\\\\Notifications\\\\Notifiable;)/',
+                "$1\nuse Solaris\\Solaris\\Traits\\Model\\SolarisUser;",
+                $directory.'/app/Models/User.php'
+            );
+
+            $this->pregReplaceInFile(
+                '/use HasFactory,\s*Notifiable;/',
+                'use HasFactory, Notifiable, SolarisUser;',
+                $directory.'/app/Models/User.php'
+            );
 
             $this->replaceInFile(
                 'APP_URL=http://localhost',
@@ -315,6 +329,10 @@ $$\   $$ |$$ |  $$ |$$ |$$  __$$ |$$ |      $$ | \____$$\
                 $phpBinary." \"$directory/artisan\" install:broadcasting --without-node --force --reverb",
             ];
             $this->runCommands($commands, $input, $output, workingPath: $directory);
+
+            if($input->getOption("npm")) {
+                $this->runCommands(["npm install"], $input, $output, workingPath: $directory);
+            }
         }
 
         return $process->getExitCode();
@@ -454,6 +472,7 @@ $$\   $$ |$$ |  $$ |$$ |$$  __$$ |$$ |      $$ | \____$$\
         }
 
         $process = Process::fromShellCommandline(implode(' && ', $commands), $workingPath, $env, null, 0);
+        $process->setTimeout(0);
 
         if (Process::isTtySupported()) {
             try {
