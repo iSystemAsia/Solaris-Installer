@@ -29,11 +29,11 @@ class NewCommand extends Command
     const SOLARIS_PACKAGES = ["core", "master-data", "sales", "marketing", "service"];
     const SOLARIS_LARAVEL_PACKAGES = [
         "core" => [
-            "isystemasia/solaris-laravel"
+            "isystemasia/solaris-laravel" => "v0.2.3"
         ],
         "master-data" => [
-            "isystemasia/solaris-laravel",
-            "isystemasia/solaris-laravel-masterdata"
+            "isystemasia/solaris-laravel" => "v0.2.3",
+            "isystemasia/solaris-laravel-masterdata" => "v0.0.5"
         ],
         "sales" => [
             "isystemasia/solaris-laravel",
@@ -267,13 +267,18 @@ $$\   $$ |$$ |  $$ |$$ |$$  __$$ |$$ |      $$ | \____$$\
 
             $commands        = [];
             $solarisPackages = self::SOLARIS_LARAVEL_PACKAGES[$package];
-            foreach ($solarisPackages as $pack) {
-                $commands[] = $composer." config repositories.{$pack} vcs https://github.com/{$pack}.git";
+            foreach ($solarisPackages as $key => $pack) {
+                $commands[] = $composer." config repositories.{$key} vcs https://github.com/{$key}.git";
             }
 
-            $commands[] = $composer." require ".$solarisPackages[count($solarisPackages)-1]." --with-all-dependencies";
-
             $this->runCommands($commands, $input, $output, workingPath: $directory);
+
+            $lastPackage        = array_key_last($solarisPackages); 
+            $lastPackageVersion = $solarisPackages[$lastPackage];
+
+            $this->runCommands([
+                $composer." require ".$lastPackage.":".$lastPackageVersion." --with-all-dependencies"
+            ], $input, $output, workingPath: $directory);
 
             $solarisCommand = $phpBinary." artisan solaris:install";
             foreach ($config as $key => $value) {
@@ -285,47 +290,9 @@ $$\   $$ |$$ |  $$ |$$ |$$  __$$ |$$ |      $$ | \____$$\
                 }
             }
 
-            $this->pregReplaceInFile(
-                '/(use Illuminate\\\\Notifications\\\\Notifiable;)/',
-                "$1\nuse Solaris\\Solaris\\Traits\\Model\\SolarisUser;",
-                $directory.'/app/Models/User.php'
-            );
+            $this->configureUserModel($directory);
 
-            $this->pregReplaceInFile(
-                '/use HasFactory,\s*Notifiable;/',
-                'use HasFactory, Notifiable, SolarisUser;',
-                $directory.'/app/Models/User.php'
-            );
-
-            $this->replaceInFile(
-                'SESSION_DRIVER=database',
-                'SESSION_DRIVER=redis',
-                $directory.'/.env'
-            );
-
-            $this->replaceInFile(
-                'QUEUE_CONNECTION=database',
-                'QUEUE_CONNECTION=redis',
-                $directory.'/.env'
-            );
-
-            $this->replaceInFile(
-                'CACHE_STORE=database',
-                'CACHE_STORE=redis',
-                $directory.'/.env'
-            );
-
-            $this->replaceInFile(
-                'REDIS_CLIENT=phpredis',
-                'REDIS_CLIENT=predis',
-                $directory.'/.env'
-            );
-
-            $this->replaceInFile(
-                'APP_URL=http://localhost',
-                'APP_URL=http://localhost:8000',
-                $directory.'/.env'
-            );
+            $this->configureEnv($directory);
 
             $this->configureDefaultDatabaseConnection($directory, [
                 'db'            => $input->getOption("database"),
@@ -347,6 +314,18 @@ $$\   $$ |$$ |  $$ |$$ |$$  __$$ |$$ |      $$ | \____$$\
             if($input->getOption("npm")) {
                 $this->runCommands(["npm install"], $input, $output, workingPath: $directory);
             }
+
+            $this->runCommands([
+                $phpBinary.' artisan vendor:publish --provider="NotificationChannels\WebPush\WebPushServiceProvider" --tag="config"',
+            ], $input, $output, workingPath: $directory);
+
+            $this->replaceInFile(
+                "'model' => \\NotificationChannels\\WebPush\\PushSubscription::class,",
+                "'model' => \"Solaris\\\\Solaris\\\\Models\\\\PushSubscription\",",
+                $directory . '/config/webpush.php'
+            );
+
+            $this->runCommands([$phpBinary.' artisan webpush:vapid'], $input, $output, workingPath: $directory);
         }
 
         return $process->getExitCode();
@@ -676,4 +655,74 @@ $$\   $$ |$$ |  $$ |$$ |$$  __$$ |$$ |      $$ | \____$$\
             $directory.'/.env.example'
         );
     }
-} 
+
+    protected function configureUserModel(string $directory)
+    {
+        $userModelPath = $directory . '/app/Models/User.php';
+
+        $this->pregReplaceInFile(
+            '/^\s*use\s+Illuminate\\\\Notifications\\\\Notifiable;\s*$/m',
+            '',
+            $userModelPath
+        );
+
+        $this->pregReplaceInFile(
+            '/,\s*Notifiable|Notifiable,\s*/',
+            '',
+            $userModelPath
+        );
+
+        $this->pregReplaceInFile(
+            '/(use Illuminate\\\\Database\\\\Eloquent\\\\Factories\\\\HasFactory;)/',
+            "$1\nuse Solaris\\Solaris\\Traits\\Model\\SolarisUser;",
+            $userModelPath
+        );
+
+        $this->pregReplaceInFile(
+            '/use\s+HasFactory\s*;/',
+            'use HasFactory, SolarisUser;',
+            $userModelPath
+        );
+    }
+
+    protected function configureEnv(string $directory)
+    {
+        $envPath = $directory.'/.env';
+
+        $this->replaceInFile(
+            'SESSION_DRIVER=database',
+            'SESSION_DRIVER=redis',
+            $envPath
+        );
+
+        $this->replaceInFile(
+            'QUEUE_CONNECTION=database',
+            'QUEUE_CONNECTION=redis',
+            $envPath
+        );
+
+        $this->replaceInFile(
+            'CACHE_STORE=database',
+            'CACHE_STORE=redis',
+            $envPath
+        );
+
+        $this->replaceInFile(
+            'REDIS_CLIENT=phpredis',
+            'REDIS_CLIENT=predis',
+            $envPath
+        );
+
+        $this->replaceInFile(
+            'BROADCAST_CONNECTION=log',
+            'BROADCAST_CONNECTION=reverb',
+            $envPath
+        );
+
+        $this->replaceInFile(
+            'APP_URL=http://localhost',
+            'APP_URL=http://localhost:8000',
+            $envPath
+        );
+    }
+}
